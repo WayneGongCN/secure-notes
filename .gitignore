@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .sites-runtime/
+.vercel/
 .cache/
 .env*
 !.env.example

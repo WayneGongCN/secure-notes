@@ -1,0 +1,129 @@
+name: Deploy Secure Notes
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: secure-notes-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.created && !github.event.deleted
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production
+      url: https://${{ vars.PRODUCTION_HOSTNAME }}
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      PRODUCTION_HOSTNAME: ${{ vars.PRODUCTION_HOSTNAME }}
+      VERCEL_CLI_VERSION: '65.12.1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release tag and commit
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
+          : "${VERCEL_ORG_ID:?Missing Vercel team ID}"
+          : "${VERCEL_PROJECT_ID:?Missing Vercel project ID}"
+          : "${PRODUCTION_HOSTNAME:?Missing production hostname}"
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: |
+          npm install --global pnpm@10.28.2
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chrome
+
+      - name: Check and test
+        run: |
+          pnpm check
+          pnpm test
+          pnpm test:e2e
+
+      - name: Install Vercel CLI
+        run: npm install --global "vercel@$VERCEL_CLI_VERSION"
+
+      - name: Pull production settings
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          : "${VERCEL_TOKEN:?Configure VERCEL_TOKEN in the production environment}"
+          vercel pull --yes --environment=production
+
+      - name: Build with the production RP ID
+        env:
+          VITE_RP_ID: ${{ vars.PRODUCTION_HOSTNAME }}
+        run: vercel build --prod
+
+      - name: Stage the production build
+        id: stage
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        shell: bash
+        run: |
+          commit=$(git rev-parse HEAD)
+          url=$(vercel deploy --prebuilt --prod --skip-domain \
+            --meta "releaseTag=$GITHUB_REF_NAME" --meta "releaseCommit=$commit")
+          [[ "$url" =~ ^https://[a-z0-9-]+\.vercel\.app$ ]]
+          printf 'url=%s\n' "$url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify staged deployment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          DEPLOYMENT_URL: ${{ steps.stage.outputs.url }}
+        run: bash .github/scripts/smoke-deployment.sh "$DEPLOYMENT_URL" staged
+
+      - name: Promote verified build
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          DEPLOYMENT_URL: ${{ steps.stage.outputs.url }}
+        run: vercel promote "$DEPLOYMENT_URL" --yes
+
+      - name: Confirm production points to this release
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          DEPLOYMENT_URL: ${{ steps.stage.outputs.url }}
+        shell: bash
+        run: |
+          commit=$(git rev-parse HEAD)
+          for attempt in 1 2 3 4 5; do
+            if vercel api "/v13/deployments/$PRODUCTION_HOSTNAME" --scope "$VERCEL_ORG_ID" --raw \
+              | jq -e --arg project "$VERCEL_PROJECT_ID" --arg url "${DEPLOYMENT_URL#https://}" \
+                --arg commit "$commit" --arg tag "$GITHUB_REF_NAME" \
+                '.projectId == $project and .url == $url and .target == "production" and
+                 .readyState == "READY" and .meta.releaseCommit == $commit and .meta.releaseTag == $tag' >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Production hostname did not resolve to the tagged deployment." >&2
+          exit 1
+
+      - name: Verify public production routes
+        run: |
+          url="https://$PRODUCTION_HOSTNAME"
+          for attempt in 1 2 3 4 5; do
+            if bash .github/scripts/smoke-deployment.sh "$url" public; then
+              printf 'Published %s (%s) to %s\n' "$GITHUB_REF_NAME" "$(git rev-parse HEAD)" "$url" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
