@@ -94,7 +94,13 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           DEPLOYMENT_URL: ${{ steps.stage.outputs.url }}
-        run: vercel promote "$DEPLOYMENT_URL" --yes
+        shell: bash
+        run: |
+          deployment_id=$(vercel api "/v13/deployments/${DEPLOYMENT_URL#https://}?teamId=$VERCEL_ORG_ID" --raw \
+            | jq -er --arg project "$VERCEL_PROJECT_ID" \
+              'select(.projectId == $project and .target == "production" and .readyState == "READY") | .id')
+          printf '{}\n' | vercel api "/v10/projects/$VERCEL_PROJECT_ID/promote/$deployment_id?teamId=$VERCEL_ORG_ID" \
+            --method POST --input - --silent
 
       - name: Confirm production points to this release
         env:
@@ -103,8 +109,8 @@ jobs:
         shell: bash
         run: |
           commit=$(git rev-parse HEAD)
-          for attempt in 1 2 3 4 5; do
-            if vercel api "/v13/deployments/$PRODUCTION_HOSTNAME" --scope "$VERCEL_ORG_ID" --raw \
+          for attempt in {1..12}; do
+            if vercel api "/v13/deployments/$PRODUCTION_HOSTNAME?teamId=$VERCEL_ORG_ID" --raw \
               | jq -e --arg project "$VERCEL_PROJECT_ID" --arg url "${DEPLOYMENT_URL#https://}" \
                 --arg commit "$commit" --arg tag "$GITHUB_REF_NAME" \
                 '.projectId == $project and .url == $url and .target == "production" and
