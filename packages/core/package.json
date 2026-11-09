@@ -1,0 +1,14 @@
+{
+  "name": "@secure-notes/core",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./storage/s3": { "types": "./dist/storage/s3.d.ts", "import": "./dist/storage/s3.js" },
+    "./storage/webdav": { "types": "./dist/storage/webdav.d.ts", "import": "./dist/storage/webdav.js" }
+  },
+  "scripts": { "build": "tsc -p tsconfig.json", "check": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": { "@aws-sdk/client-s3": "3.1163.0" }
+}
