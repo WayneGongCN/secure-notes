@@ -5,6 +5,20 @@
   "buildCommand": "pnpm build",
   "outputDirectory": "packages/web/dist",
   "trailingSlash": true,
+  "redirects": [
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "secure-notes-waynegongcn.vercel.app" }],
+      "destination": "https://secure-notes.waynegong.com/",
+      "permanent": true
+    },
+    {
+      "source": "/zh/",
+      "has": [{ "type": "host", "value": "secure-notes-waynegongcn.vercel.app" }],
+      "destination": "https://secure-notes.waynegong.com/zh/",
+      "permanent": true
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
