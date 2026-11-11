@@ -1,8 +1,8 @@
 # Secure Notes
 
-[简体中文](README.zh-CN.md) · [Website](https://secure-notes-waynegongcn.vercel.app/) · [Open the app](https://secure-notes-waynegongcn.vercel.app/app/)
+[简体中文](README.zh-CN.md) · [Website](https://secure-notes.waynegong.com/) · [Open the app](https://secure-notes.waynegong.com/app/)
 
-Secure Notes is a client-side encrypted notebook that unlocks with a USB FIDO2 security key. Create, edit, and delete plain-text notes and store them in a single encrypted `.snote` file. Choose a local file, S3-compatible object storage, or WebDAV. The app runs in the browser without an application account, analytics SDK, or application server.
+Secure Notes is a client-side encrypted notebook that unlocks with a USB FIDO2 security key. Create, edit, and delete plain-text notes and store them in a single encrypted `.snote` file. Choose a local file, S3-compatible object storage, or WebDAV. The app runs in the browser without an application account or application server. Google Analytics measures visits to the public English and Chinese homepages. The notebook app does not load the analytics tag.
 
 ## Development and builds
 
@@ -71,7 +71,7 @@ Example bucket CORS configuration for the hosted app. Replace the origin for sel
 ```json
 [
   {
-    "AllowedOrigins": ["https://secure-notes-waynegongcn.vercel.app"],
+    "AllowedOrigins": ["https://secure-notes.waynegong.com"],
     "AllowedMethods": ["GET", "PUT"],
     "AllowedHeaders": ["authorization", "content-type", "cache-control", "if-match", "if-none-match", "x-amz-*", "amz-sdk-*"],
     "ExposeHeaders": ["ETag"],
@@ -103,7 +103,9 @@ git tag -a v0.1.0 -m "Secure Notes v0.1.0"
 git push origin v0.1.0
 ```
 
-The workflow validates the tagged commit, runs tests, builds with the production hostname as `VITE_RP_ID`, and stages the Vercel deployment. It checks the homepage in both languages, the app bundle, and the PWA before promoting the deployment.
+The workflow validates the tagged commit, runs tests, and stages the Vercel deployment. The hosted app uses the current hostname as its WebAuthn RP ID. It checks the homepage in both languages, the app bundle, and the PWA before promoting the deployment.
+
+Existing vaults created on the Vercel domain still open at the [original app](https://secure-notes-waynegongcn.vercel.app/app/). Create new vaults on the custom domain. For remote storage, allow both origins in CORS if you still use vaults on the original domain.
 
 ### Self-hosting
 

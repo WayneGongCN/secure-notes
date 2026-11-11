@@ -67,9 +67,9 @@ jobs:
           : "${VERCEL_TOKEN:?Configure VERCEL_TOKEN in the production environment}"
           vercel pull --yes --environment=production
 
-      - name: Build with the production RP ID
+      - name: Build for both app hostnames
         env:
-          VITE_RP_ID: ${{ vars.PRODUCTION_HOSTNAME }}
+          VITE_RP_ID: ''
         run: vercel build --prod
 
       - name: Stage the production build

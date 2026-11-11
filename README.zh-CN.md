@@ -1,8 +1,8 @@
 # Secure Notes
 
-[English](README.md) · [中文首页](https://secure-notes-waynegongcn.vercel.app/zh/) · [打开应用](https://secure-notes-waynegongcn.vercel.app/app/)
+[English](README.md) · [中文首页](https://secure-notes.waynegong.com/zh/) · [打开应用](https://secure-notes.waynegong.com/app/)
 
-通过 USB FIDO2 硬件密钥解锁的客户端加密笔记。纯文本增删改，单个 `.snote` 文件，本地文件 / S3 兼容对象存储 / WebDAV 三选一。没有应用账号、分析 SDK 或应用服务器。
+通过 USB FIDO2 硬件密钥解锁的客户端加密笔记。纯文本增删改，单个 `.snote` 文件，本地文件 / S3 兼容对象存储 / WebDAV 三选一。无需应用账号或应用服务器。 Google Analytics 统计中英文公开首页的访问量。加密笔记应用不加载统计代码。
 
 ## 开发与构建
 
@@ -72,7 +72,7 @@ S3/WebDAV 的凭据只留在当前页面对象内存中，不保存到 localStor
 ```json
 [
   {
-    "AllowedOrigins": ["https://secure-notes-waynegongcn.vercel.app"],
+    "AllowedOrigins": ["https://secure-notes.waynegong.com"],
     "AllowedMethods": ["GET", "PUT"],
     "AllowedHeaders": ["authorization", "content-type", "cache-control", "if-match", "if-none-match", "x-amz-*", "amz-sdk-*"],
     "ExposeHeaders": ["ETag"],
@@ -104,7 +104,9 @@ git tag -a v0.1.0 -m "Secure Notes v0.1.0"
 git push origin v0.1.0
 ```
 
-工作流校验 Tag 指向的提交并执行测试，将生产域名作为 `VITE_RP_ID` 构建，然后上传到 Vercel。双语首页、应用资源和 PWA 验证通过后，再将同一份产物提升到正式域名。
+工作流校验 Tag 指向的提交并执行测试，然后将构建产物上传到 Vercel。线上应用使用当前访问的主机名作为 WebAuthn RP ID。双语首页、应用资源和 PWA 验证通过后，再将同一份产物提升到正式域名。
+
+旧 Vercel 域名创建的笔记库继续在[原应用](https://secure-notes-waynegongcn.vercel.app/app/)解锁。新笔记库在自定义域名创建。若仍在原域名使用远程笔记库，请在存储端 CORS 配置中同时允许两个来源。
 
 ### 自托管与安全边界
 
