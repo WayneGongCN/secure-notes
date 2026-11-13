@@ -4,7 +4,7 @@ import type { DeriveRequest, EnrollRequest, HardwareCredential, HardwareKeyProvi
 /** 将标准字节数组转换为浏览器 Web Crypto 可接受的独立缓冲区，喵~ */
 function buffer(bytes: Uint8Array): ArrayBuffer { return bytes.slice().buffer as ArrayBuffer; }
 
-/** 只向受信 HTTPS 或 localhost 开发环境开放硬件操作，喵~ */
+/** 只向受信 HTTPS 或 localhost 开发环境开放 WebAuthn，喵~ */
 function requireSupport(rpId: string): void {
   if (!isSecureContext || !navigator.credentials || !globalThis.PublicKeyCredential) throw new VaultError('UNSUPPORTED');
   if (rpId !== location.hostname || /^\d+\.\d+\.\d+\.\d+$/.test(rpId) || rpId.includes(':')) throw new VaultError('RP_MISMATCH');
@@ -37,11 +37,13 @@ function verifyClientData(bytes: ArrayBuffer, challenge: Uint8Array, type: strin
   if (data.type !== type || data.challenge !== toBase64(challenge) || data.origin !== location.origin || data.crossOrigin === true) throw new VaultError('AUTH_FAILED');
 }
 
-/** 验证 RP 哈希、用户在场和用户验证，并拒绝可同步凭据，喵~ */
+/** 验证 RP 哈希、用户在场和用户验证，并检查凭据备份标志是否合法，喵~ */
 async function verifyAuthenticatorData(bytes: ArrayBuffer, rpId: string): Promise<void> {
   const data = new Uint8Array(bytes);
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpId)));
-  if (data.length < 37 || !equalBytes(data.slice(0, 32), hash) || (data[32]! & 5) !== 5 || (data[32]! & 0x18) !== 0) throw new VaultError('AUTH_FAILED');
+  if (data.length < 37 || !equalBytes(data.slice(0, 32), hash) || (data[32]! & 5) !== 5) throw new VaultError('AUTH_FAILED');
+  const backupFlags = data[32]! & 0x18;
+  if (backupFlags === 0x10) throw new VaultError('AUTH_FAILED');
 }
 
 /** 将 WebAuthn ES256 的 DER 签名转换为 Web Crypto 所需的固定长度签名，喵~ */
@@ -66,7 +68,7 @@ function derSignature(bytes: ArrayBuffer): ArrayBuffer {
 function hardwareError(error: unknown, operation: 'enroll' | 'derive', stage: string, signal: AbortSignal): VaultError {
   const name = (error as { name?: string })?.name;
   const safeName = error instanceof VaultError ? error.code : ['AbortError', 'NotAllowedError', 'NotSupportedError', 'SecurityError', 'TypeError'].includes(name ?? '') ? name : 'UnknownError';
-  console.info('[硬件认证]', { operation, stage, error: safeName, aborted: signal.aborted, visible: !document.hidden, focused: document.hasFocus() });
+  console.info('[WebAuthn]', { operation, stage, error: safeName, aborted: signal.aborted, visible: !document.hidden, focused: document.hasFocus() });
   if (error instanceof VaultError) return error;
   return new VaultError(name === 'AbortError' || name === 'NotAllowedError' ? 'CANCELLED' : name === 'NotSupportedError' ? 'UNSUPPORTED' : 'AUTH_FAILED');
 }
@@ -74,30 +76,30 @@ function hardwareError(error: unknown, operation: 'enroll' | 'derive', stage: st
 type PrfOutput = { prf?: { enabled?: boolean; results?: { first?: ArrayBuffer } } };
 
 export class BrowserHardwareKeyProvider implements HardwareKeyProvider {
-  /** 调用浏览器登记 USB 外置密钥，并验证用户验证及 PRF 能力，喵~ */
+  /** 登记 WebAuthn 凭据并验证用户验证及 PRF 能力，喵~ */
   async enroll(request: EnrollRequest): Promise<HardwareCredential> {
     requireSupport(request.rpId);
     const challenge = crypto.getRandomValues(new Uint8Array(32));
     let stage = 'request';
     try {
-      const options: PublicKeyCredentialCreationOptions & { hints: string[] } = {
+      const options: PublicKeyCredentialCreationOptions = {
         rp: { id: request.rpId, name: 'Secure Notes' },
         user: { id: buffer(request.userId), name: `notes-${toBase64(request.userId).slice(0, 12)}`, displayName: request.label },
         challenge: buffer(challenge), pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-        authenticatorSelection: { authenticatorAttachment: 'cross-platform', residentKey: 'discouraged', userVerification: 'required' },
-        attestation: 'none', timeout: 60_000, hints: ['security-key'],
+        authenticatorSelection: { residentKey: 'discouraged', userVerification: 'required' },
+        attestation: 'none', timeout: 60_000,
         extensions: { prf: {} } as AuthenticationExtensionsClientInputs,
       };
       const credential = await navigator.credentials.create({ publicKey: options, signal: request.signal }) as PublicKeyCredential | null;
       stage = 'validate-credential';
-      if (!credential || credential.type !== 'public-key' || credential.authenticatorAttachment !== 'cross-platform') throw new VaultError('UNSUPPORTED');
+      if (!credential || credential.type !== 'public-key') throw new VaultError('UNSUPPORTED');
       const response = credential.response as AuthenticatorAttestationResponse;
       stage = 'validate-client';
       verifyClientData(response.clientDataJSON, challenge, 'webauthn.create');
       stage = 'validate-authenticator';
       await verifyAuthenticatorData(response.getAuthenticatorData(), request.rpId);
       stage = 'check-prf';
-      if (!(credential.getClientExtensionResults() as PrfOutput).prf?.enabled) throw new VaultError('UNSUPPORTED');
+      if ((credential.getClientExtensionResults() as PrfOutput).prf?.enabled !== true) throw new VaultError('PRF_UNAVAILABLE');
       const publicKey = response.getPublicKey();
       if (!publicKey || response.getPublicKeyAlgorithm() !== -7) throw new VaultError('UNSUPPORTED');
       stage = 'wait-for-page-focus';
@@ -112,10 +114,10 @@ export class BrowserHardwareKeyProvider implements HardwareKeyProvider {
     const challenge = crypto.getRandomValues(new Uint8Array(32));
     let stage = 'request'; let output: Uint8Array | undefined;
     try {
-      const options: PublicKeyCredentialRequestOptions & { hints: string[] } = {
+      const options: PublicKeyCredentialRequestOptions = {
         rpId: request.rpId, challenge: buffer(challenge), timeout: 60_000,
-        allowCredentials: [{ id: buffer(request.credential.credentialId), type: 'public-key', transports: ['usb'] }],
-        userVerification: 'required', hints: ['security-key'],
+        allowCredentials: [{ id: buffer(request.credential.credentialId), type: 'public-key' }],
+        userVerification: 'required',
         extensions: { prf: { eval: { first: buffer(request.prfInput) } } } as AuthenticationExtensionsClientInputs,
       };
       const credential = await navigator.credentials.get({ publicKey: options, signal: request.signal }) as PublicKeyCredential | null;
@@ -134,7 +136,7 @@ export class BrowserHardwareKeyProvider implements HardwareKeyProvider {
       if (!await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, publicKey, derSignature(response.signature), buffer(signed))) throw new VaultError('AUTH_FAILED');
       stage = 'check-prf';
       const secret = (credential.getClientExtensionResults() as PrfOutput).prf?.results?.first;
-      if (!secret || secret.byteLength !== 32) throw new VaultError('UNSUPPORTED');
+      if (!(secret instanceof ArrayBuffer) || secret.byteLength !== 32) throw new VaultError('PRF_UNAVAILABLE');
       output = new Uint8Array(secret); stage = 'wait-for-page-focus';
       await requireActivePage(request.signal); return output;
     } catch (e) { output?.fill(0); throw hardwareError(e, 'derive', stage, request.signal); }
