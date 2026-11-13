@@ -23,7 +23,7 @@ test('认证弹窗暂时失焦时仍可完成双硬件配置、导出与恢复',
   await expect(page.getByRole('textbox', { name: '笔记正文' })).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('端到端测试私有标题');
   await page.locator('.key-select select').selectOption({ label: '备用密钥' });
-  await page.getByRole('button', { name: '使用硬件密钥解锁' }).click();
+  await page.getByRole('button', { name: '使用密钥解锁' }).click();
   await expect(page.getByRole('textbox', { name: '笔记正文' })).toHaveValue('浏览器 Web Crypto 写入的内容，不能出现在密文中。');
   const node = new VaultSession({ crypto: webcrypto as unknown as CryptoRuntime, hardware: nodeHardware(material), rpId: 'localhost' });
   node.load(bytes); await node.unlock(); expect(node.listNotes()[0]?.title).toBe('端到端测试私有标题');
@@ -34,7 +34,7 @@ test('认证弹窗暂时失焦时仍可完成双硬件配置、导出与恢复',
   await cdp.detach();
   await page.reload(); await page.getByRole('button', { name: '打开已有笔记库' }).click();
   await page.getByLabel('选择加密笔记库').setInputFiles({ name: 'Notes.snote', mimeType: 'application/octet-stream', buffer: Buffer.from(bytes) });
-  await page.getByRole('button', { name: '使用硬件密钥解锁' }).click();
+  await page.getByRole('button', { name: '使用密钥解锁' }).click();
   await expect(page.getByRole('button', { name: /端到端测试私有标题/ })).toBeVisible();
 });
 
@@ -47,7 +47,7 @@ for (const skipAfterRegistration of [false, true]) {
     await expect(page.getByRole('button', { name: '选择位置并保存', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: '验证主密钥', exact: true }).click();
     await expect(page.getByRole('button', { name: '登记备用密钥（可选）', exact: true })).toBeVisible();
-    await expect(page.getByText('仅绑定一把密钥时，密钥丢失或损坏后将无法解密笔记。')).toBeVisible();
+    await expect(page.getByText('仅绑定一枚密钥时，密钥丢失或损坏后将无法解密笔记。')).toBeVisible();
     if (skipAfterRegistration) {
       await page.getByRole('button', { name: '登记备用密钥（可选）', exact: true }).click();
       await expect(page.getByRole('button', { name: '验证备用密钥', exact: true })).toBeVisible();
@@ -57,8 +57,8 @@ for (const skipAfterRegistration of [false, true]) {
     await page.getByRole('button', { name: skipAfterRegistration ? '跳过备用密钥并保存' : '选择位置并保存', exact: true }).click();
     const created = await createdDownload;
     expect(VaultCodec.parse(new Uint8Array(await readFile((await created.path())!))).keySlots).toHaveLength(1);
-    await expect(page.getByText('1 把硬件密钥')).toBeVisible();
-    if (skipAfterRegistration) await page.getByRole('button', { name: '使用硬件密钥解锁', exact: true }).click();
+    await expect(page.getByText('1 枚已绑定密钥')).toBeVisible();
+    if (skipAfterRegistration) await page.getByRole('button', { name: '使用密钥解锁', exact: true }).click();
     await page.getByRole('button', { name: '新建笔记', exact: true }).first().click();
     await page.getByRole('textbox', { name: '笔记正文' }).fill('单把硬件保护的内容');
     await page.getByRole('button', { name: '锁定', exact: true }).click();
@@ -68,7 +68,7 @@ for (const skipAfterRegistration of [false, true]) {
     expect(new TextDecoder().decode(bytes)).not.toContain('单把硬件保护的内容');
     const restored = new VaultSession({ crypto: webcrypto, hardware: nodeHardware(material), rpId: 'localhost' });
     restored.load(bytes); await restored.unlock(); expect(restored.listNotes()[0]?.body).toBe('单把硬件保护的内容');
-    await page.getByRole('button', { name: '使用硬件密钥解锁', exact: true }).click();
+    await page.getByRole('button', { name: '使用密钥解锁', exact: true }).click();
     await expect(page.getByRole('textbox', { name: '笔记正文' })).toHaveValue('单把硬件保护的内容');
   });
 }
@@ -77,26 +77,61 @@ test('Node 创建的文件在浏览器打开；失焦与迟到认证结果均不
   const material = await keys(); const bytes = await nodeVault(material); await installHardware(page, material); await page.goto('/app/');
   await page.getByRole('button', { name: '打开已有笔记库' }).click();
   await page.getByLabel('选择加密笔记库').setInputFiles({ name: 'Node.snote', mimeType: 'application/octet-stream', buffer: Buffer.from(bytes) });
-  await page.getByRole('button', { name: '使用硬件密钥解锁' }).click();
+  await page.getByRole('button', { name: '使用密钥解锁' }).click();
   await page.getByRole('button', { name: /Node 创建的笔记/ }).click();
   await expect(page.getByRole('textbox', { name: '笔记正文' })).toHaveValue('这份正文来自无 DOM 的 Node.js 核心。');
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
   await expect(page.getByRole('textbox', { name: '笔记正文' })).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('Node 创建的笔记');
   await page.evaluate(() => { (window as any).__hardwareTest.delay = true; });
-  await page.getByRole('button', { name: '使用硬件密钥解锁' }).click();
+  await page.getByRole('button', { name: '使用密钥解锁' }).click();
   await expect.poll(() => page.evaluate(() => (window as any).__hardwareTest.pending)).toBe(true);
   await page.evaluate(() => { window.dispatchEvent(new Event('pagehide')); (window as any).__hardwareTest.release(); });
   await expect(page.getByRole('heading', { name: '你的笔记已锁定' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText('Node 创建的笔记');
 });
 
-test('浏览器不支持 PRF 时明确拒绝创建，不提供软件或密码后门', async ({ page }) => {
+test('KeePassXC 形式的 PRF 通行密钥可创建、保存和重新打开笔记库', async ({ page }) => {
   await installHardware(page, await keys()); await page.goto('/app/');
+  await page.evaluate(() => { (window as any).__hardwareTest.platformPasskey = true; });
+  await page.getByRole('button', { name: '新建笔记库', exact: true }).click();
+  await page.getByRole('button', { name: '登记主密钥', exact: true }).click();
+  const verify = page.getByRole('button', { name: '验证主密钥', exact: true });
+  const save = page.getByRole('button', { name: '选择位置并保存', exact: true });
+  await expect(verify).toBeEnabled();
+
   await page.evaluate(() => { (window as any).__hardwareTest.noPrf = true; });
+  await verify.click();
+  await expect(page.getByRole('alert')).toContainText('未提供 WebAuthn PRF');
+  await expect(save).toHaveCount(0);
+  await page.evaluate(() => { (window as any).__hardwareTest.noPrf = false; });
+  await verify.click();
+  const created = page.waitForEvent('download'); await save.click(); await created;
+
+  await page.getByRole('button', { name: '新建笔记', exact: true }).first().click();
+  await page.getByRole('textbox', { name: '笔记标题' }).fill('通行密钥保护的笔记');
+  await page.getByRole('textbox', { name: '笔记正文' }).fill('重新打开后可解密。');
+  const exported = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出副本', exact: true }).click();
+  const download = await exported;
+  const bytes = await readFile((await download.path())!);
+  expect(bytes.toString()).not.toContain('重新打开后可解密。');
+
+  await page.reload();
+  await page.evaluate(() => { (window as any).__hardwareTest.platformPasskey = true; });
+  await page.getByRole('button', { name: '打开已有笔记库', exact: true }).click();
+  await page.getByLabel('选择加密笔记库').setInputFiles({ name: 'Notes.snote', mimeType: 'application/octet-stream', buffer: bytes });
+  await page.getByRole('button', { name: '使用密钥解锁', exact: true }).click();
+  await page.getByRole('button', { name: /通行密钥保护的笔记/ }).click();
+  await expect(page.getByRole('textbox', { name: '笔记正文' })).toHaveValue('重新打开后可解密。');
+});
+
+test('KeePassXC 未声明支持 PRF 时拒绝登记', async ({ page }) => {
+  await installHardware(page, await keys()); await page.goto('/app/');
+  await page.evaluate(() => { Object.assign((window as any).__hardwareTest, { platformPasskey: true, noPrf: true }); });
   await page.getByRole('button', { name: '新建笔记库' }).click();
   await page.getByRole('button', { name: '登记主密钥' }).click();
-  await expect(page.getByRole('alert')).toContainText('不支持');
+  await expect(page.getByRole('alert')).toContainText('未提供 WebAuthn PRF');
   await expect(page.getByRole('button', { name: '选择位置并保存' })).toHaveCount(0);
 });
 
@@ -118,7 +153,7 @@ test('WebDAV 只上传密文，并以旧 ETag 阻止覆盖另一台设备版本'
   await page.getByLabel('用户名', { exact: true }).fill('test'); await page.getByLabel('应用密码', { exact: true }).fill('TEST_ONLY');
   await page.getByRole('checkbox', { name: /允许远端编辑/ }).check();
   await page.getByRole('button', { name: '打开已有笔记库' }).click();
-  await page.getByRole('button', { name: '使用硬件密钥解锁' }).click();
+  await page.getByRole('button', { name: '使用密钥解锁' }).click();
   await page.getByRole('button', { name: /Node 创建的笔记/ }).click();
   await page.getByRole('textbox', { name: '笔记正文' }).fill('远端私密内容');
   await page.getByRole('button', { name: '立即保存' }).click(); await expect.poll(() => writes).toBe(1);
@@ -154,7 +189,7 @@ test('S3 在浏览器签名请求并通过条件 PUT 保存密文', async ({ pag
     await page.getByLabel(label!, { exact: true }).fill(value!);
   }
   await page.getByRole('checkbox', { name: /允许远端编辑/ }).check(); await page.getByRole('button', { name: '打开已有笔记库' }).click();
-  await page.getByRole('button', { name: '使用硬件密钥解锁' }).click(); await page.getByRole('button', { name: /Node 创建的笔记/ }).click();
+  await page.getByRole('button', { name: '使用密钥解锁' }).click(); await page.getByRole('button', { name: /Node 创建的笔记/ }).click();
   await page.getByRole('textbox', { name: '笔记正文' }).fill('S3 浏览器私有内容'); await page.getByRole('button', { name: '立即保存' }).click();
   await expect.poll(() => writes).toBe(1); expect(signed).toBe(true);
 });
@@ -163,7 +198,7 @@ test('前台空闲超时后隐藏全部内容', async ({ page }) => {
   const material = await keys(); const bytes = await nodeVault(material); await installHardware(page, material); await page.clock.install(); await page.goto('/app/');
   await page.getByRole('button', { name: '打开已有笔记库' }).click();
   await page.getByLabel('选择加密笔记库').setInputFiles({ name: 'Notes.snote', mimeType: 'application/octet-stream', buffer: Buffer.from(bytes) });
-  await page.getByRole('button', { name: '使用硬件密钥解锁' }).click(); await page.getByRole('button', { name: /Node 创建的笔记/ }).click();
+  await page.getByRole('button', { name: '使用密钥解锁' }).click(); await page.getByRole('button', { name: /Node 创建的笔记/ }).click();
   await page.clock.fastForward(61_000);
   await expect(page.getByRole('heading', { name: '你的笔记已锁定' })).toBeVisible(); await expect(page.locator('body')).not.toContainText('Node 创建的笔记');
 });

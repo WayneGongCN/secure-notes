@@ -44,7 +44,7 @@ export async function nodeVault(material: TestKey[]): Promise<Uint8Array> {
 /** 在独立测试浏览器注入认证器，不给生产应用留下测试后门，喵~ */
 export async function installHardware(page: Page, material: TestKey[]): Promise<void> {
   await page.addInitScript(({ material }) => {
-    const state = { next: 0, delay: false, pending: false, release: undefined as (() => void) | undefined, noPrf: false, modalBlur: false };
+    const state = { next: 0, delay: false, pending: false, release: undefined as (() => void) | undefined, noPrf: false, modalBlur: false, platformPasskey: false };
     Object.assign(window, { __hardwareTest: state });
     Object.defineProperty(window, 'showOpenFilePicker', { value: undefined, configurable: true });
     Object.defineProperty(window, 'showSaveFilePicker', { value: undefined, configurable: true });
@@ -52,7 +52,10 @@ export async function installHardware(page: Page, material: TestKey[]): Promise<
     function b64(bytes: Uint8Array): string { return btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', ''); }
     /** 构造真实 RP 哈希及 UV/UP 标志，喵~ */
     async function authData(rpId: string): Promise<Uint8Array> {
-      const bytes = new Uint8Array(37); bytes.set(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpId)))); bytes[32] = 5; return bytes;
+      const bytes = new Uint8Array(37); bytes.set(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpId))));
+      // KeePassXC sets both the backup eligibility and backup state flags.
+      bytes[32] = state.platformPasskey ? 0x1d : 0x05;
+      return bytes;
     }
     /** 将真实 Web Crypto 签名编码为 WebAuthn DER 签名，喵~ */
     function der(raw: Uint8Array): ArrayBuffer {
@@ -65,16 +68,22 @@ export async function installHardware(page: Page, material: TestKey[]): Promise<
     Object.defineProperty(navigator, 'credentials', { configurable: true, value: {
       /** 模拟硬件登记的公开响应，喵~ */
       async create({ publicKey: options }: any) {
+        if (state.platformPasskey && (options.authenticatorSelection?.authenticatorAttachment === 'cross-platform' || options.hints?.includes('security-key'))) {
+          throw new DOMException('Platform credentials excluded', 'NotAllowedError');
+        }
         if (state.modalBlur) window.dispatchEvent(new Event('blur'));
         const key = material[state.next++]; if (!key) throw new DOMException('Cancelled', 'NotAllowedError');
         const data = await authData(options.rp.id);
         const client = new TextEncoder().encode(JSON.stringify({ type: 'webauthn.create', origin: location.origin, challenge: b64(new Uint8Array(options.challenge)), crossOrigin: false }));
-        return { type: 'public-key', authenticatorAttachment: 'cross-platform', rawId: new Uint8Array(key.id).buffer,
+        return { type: 'public-key', authenticatorAttachment: state.platformPasskey ? 'platform' : 'cross-platform', rawId: new Uint8Array(key.id).buffer,
           response: { clientDataJSON: client.buffer, getAuthenticatorData: () => data.buffer, getPublicKey: () => new Uint8Array(key.publicKey).buffer, getPublicKeyAlgorithm: () => -7 },
           getClientExtensionResults: () => ({ prf: { enabled: !state.noPrf } }) };
       },
       /** 用真实 ECDSA 和 HMAC 生成验证响应，并支持迟到回调测试，喵~ */
       async get({ publicKey: options }: any) {
+        if (state.platformPasskey && (options.allowCredentials[0].transports?.includes('usb') || options.hints?.includes('security-key'))) {
+          throw new DOMException('Platform credentials excluded', 'NotAllowedError');
+        }
         if (state.modalBlur) window.dispatchEvent(new Event('blur'));
         if (state.delay) { state.pending = true; await new Promise<void>(resolve => { state.release = resolve; }); state.delay = false; state.pending = false; }
         const id = b64(new Uint8Array(options.allowCredentials[0].id));
@@ -89,7 +98,7 @@ export async function installHardware(page: Page, material: TestKey[]): Promise<
         const salt = await crypto.subtle.digest('SHA-256', merged);
         const hmac = await crypto.subtle.importKey('raw', new Uint8Array(key.seed), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
         const secret = await crypto.subtle.sign('HMAC', hmac, salt);
-        return { type: 'public-key', authenticatorAttachment: 'cross-platform', rawId: new Uint8Array(key.id).buffer,
+        return { type: 'public-key', authenticatorAttachment: state.platformPasskey ? 'platform' : 'cross-platform', rawId: new Uint8Array(key.id).buffer,
           response: { clientDataJSON: client.buffer, authenticatorData: data.buffer, signature: der(new Uint8Array(signature)) },
           getClientExtensionResults: () => state.noPrf ? ({ prf: {} }) : ({ prf: { results: { first: secret } } }) };
       },

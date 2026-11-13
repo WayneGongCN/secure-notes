@@ -6,7 +6,7 @@ test('English and Chinese landing pages link to the app', async ({ page }) => {
 
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  await expect(page.getByRole('heading', { name: 'Private notes. Physical key.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Private notes. Your key.' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open Secure Notes' })).toHaveAttribute('href', '/app/');
 
   await page.setViewportSize({ width: 390, height: 844 });

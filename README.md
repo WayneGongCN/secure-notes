@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md) · [Website](https://secure-notes.waynegong.com/) · [Open the app](https://secure-notes.waynegong.com/app/)
 
-Secure Notes is a client-side encrypted notebook that unlocks with a USB FIDO2 security key. Create, edit, and delete plain-text notes and store them in a single encrypted `.snote` file. Choose a local file, S3-compatible object storage, or WebDAV. The app runs in the browser without an application account or application server. Google Analytics measures visits to the public English and Chinese homepages. The notebook app does not load the analytics tag.
+Secure Notes is a client-side encrypted notebook that unlocks with a WebAuthn PRF passkey or USB FIDO2 security key. Create, edit, and delete plain-text notes and store them in a single encrypted `.snote` file. Choose a local file, S3-compatible object storage, or WebDAV. The app runs in the browser without an application account or application server. Google Analytics measures visits to the public English and Chinese homepages. The notebook app does not load the analytics tag.
 
 ## Development and builds
 
@@ -32,17 +32,19 @@ pnpm --filter @secure-notes/web preview --port 4173
 
 Serve the static output in `packages/web/dist/` over HTTP on localhost or HTTPS in production. Core ESM and type declarations are built in `packages/core/dist/`.
 
-## Hardware and daily use
+## Unlock keys and daily use
 
-1. Use a USB FIDO2 key with WebAuthn PRF support. The browser handles FIDO2 PIN entry and user verification. The app never reads the PIN.
+1. Use a passkey or USB FIDO2 key that supports WebAuthn PRF. The credential provider handles user verification, including FIDO2 PIN entry.
 2. Register and verify a primary key before saving or exporting a new vault. A verified backup key can unlock the vault independently. If you register only one key and lose it, a copy of the vault file alone cannot recover your notes.
-3. To open a vault, first load its encrypted file, then unlock it with a registered key. You can unplug the key after unlocking.
+3. To open a vault, first load its encrypted file, then unlock it with a registered key. You can unplug a USB key after unlocking.
 4. The session locks when you switch focus, put the page in the background, leave the page, lock manually, or reach the idle timeout. Temporary blur from the browser's authentication dialog covers the page while authentication continues. Results are accepted only when the page is visible and focused. The default idle timeout is one minute, with 30 seconds and five minutes also available.
 5. The app shows “Saved” after it confirms a write. When in-place saving is unavailable, including on some Safari and iOS versions, export an encrypted copy and replace the original file yourself.
 
-The browser and operating system may reuse a recent PIN verification. The app accepts external credentials that verify user presence and identity and cannot be backed up or synced. The key must support PRF to proceed.
+For KeePassXC, enable passkeys in the browser extension and connect it to your database. Both components need PRF support. The [browser extension added PRF in 1.10.4](https://github.com/keepassxreboot/keepassxc-browser/releases/tag/1.10.4). KeePassXC desktop 2.8.0 lacks this support. Follow [the desktop PRF change](https://github.com/keepassxreboot/keepassxc/pull/13529) for availability. With a PRF-capable build, choose to save a new passkey to KeePassXC when registering the primary key, then approve verification in KeePassXC before saving the vault.
 
-Browser tests exercise cryptography and virtual WebAuthn authenticators. Verify the actual combination of USB key, browser, and device before relying on it.
+When using a KeePassXC passkey, keep a backup of the KeePassXC database containing its PRF secret so you can still unlock a copy of the `.snote` file.
+
+Browser tests exercise cryptography, simulated passkeys, and a virtual WebAuthn USB authenticator. Actual credential-provider and browser combinations need separate verification.
 
 ## Storage and credentials
 
@@ -117,7 +119,7 @@ The Service Worker controls `/app/` and caches only the allowlisted app shell an
 
 ### Vault and browser limits
 
-Note titles, text, and timestamps use AES-256-GCM. HKDF derives a wrapping key from the hardware PRF output to protect a random vault key. The public header includes the vault ID, hostname, key labels, and credential IDs. Storage providers can see file sizes and access patterns and can delete or replay older encrypted versions.
+Note titles, text, and timestamps use AES-256-GCM. HKDF derives a wrapping key from the WebAuthn PRF output to protect a random vault key. The public header includes the vault ID, hostname, key labels, and credential IDs. Storage providers can see file sizes and access patterns and can delete or replay older encrypted versions.
 
 Browser code cannot reliably prevent OS screenshots or physically erase every memory copy. Trusted same-origin code, the operating system, keyboard, and browser extensions are part of the security boundary. Core rejects plaintext access after locking, and the Web app clears the plaintext it displays. Other Core consumers must clear their own copies.
 
